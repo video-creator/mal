@@ -105,7 +105,13 @@ tref box可以描述两track之间关系。
 比如：一个MP4文件中有三条video track，ID分别是2、3、4，以及三条audio track，ID分别是6、7、8。
 在播放track 2视频时到底应该采用6、7、8哪条音频与其配套播放？这时候就需要在track 2与6的tref box中指定一下，将2与6两条track绑定起来。
 **/
-    _parseTableEntry.push_back(std::make_tuple("moov|trak|tref|hint|font|vdep|vplx|subt|trgr|msrc|mdia|minf", [=](std::shared_ptr<MDPAtom> atom) {
+    _parseTableEntry.push_back(std::make_tuple("moov|trak|tref|hint|font|vdep|vplx|subt|trgr|msrc|mdia|minf|udta", [=](std::shared_ptr<MDPAtom> atom) {
+        this->_parseChildAtom(atom); 
+    }));
+    //full box
+    _parseTableEntry.push_back(std::make_tuple("meta", [=](std::shared_ptr<MDPAtom> atom) {
+        atom->writeField("version",1 * 8);
+        atom->writeField("flags", 3* 8);
         this->_parseChildAtom(atom); 
     }));
     _parseTableEntry.push_back(std::make_tuple("mdhd", [=](std::shared_ptr<MDPAtom> atom) {
@@ -210,6 +216,38 @@ tref box可以描述两track之间关系。
         };
         for (auto& el : fields) {
             atom->writeField(el);
+        }
+        this->_parseChildAtom(atom); 
+    }));
+    _parseTableEntry.push_back(std::make_tuple("avcC", [=](std::shared_ptr<MDPAtom> atom) {
+        int numOfSequenceParameterSets = 0;
+        std::vector<MDPAtomField> fields = {
+            MDPAtomField("configurationVersion",1 * 8),
+            MDPAtomField("AVCProfileIndication",1 * 8),
+            MDPAtomField("profile_compatibility",1 * 8),
+            MDPAtomField("AVCLevelIndication",1 * 8),
+
+            MDPAtomField("reserved",6),
+            MDPAtomField("lengthSizeMinusOne",2),
+
+            MDPAtomField("reserved",3),
+            MDPAtomField("numOfSequenceParameterSets",5,mdp::MDPAtomField::DisplayType::vint64,[=,&numOfSequenceParameterSets](fast_any::any val){
+                uint64_t ori = *(val.as<uint64_t>());
+                numOfSequenceParameterSets = ori;
+                return val;
+            }),
+        };
+        for (auto& el : fields) {
+            atom->writeField(el);
+        }
+        for (int i = 0; i < numOfSequenceParameterSets; i++) {
+            uint64_t sequenceParameterSetLength = *(atom->writeField("sequenceParameterSetLength",2 * 8).as<uint64_t>());
+            atom->dataSource->skipBytes(sequenceParameterSetLength);
+        }
+        uint64_t numOfPictureParameterSets = *(atom->writeField("numOfPictureParameterSets",1 * 8).as<uint64_t>());
+        for (int i = 0; i < numOfPictureParameterSets; i++) {
+            uint64_t pictureParameterSetLength = *(atom->writeField("pictureParameterSetLength",2 * 8).as<uint64_t>());
+            atom->dataSource->skipBytes(pictureParameterSetLength);
         }
         this->_parseChildAtom(atom); 
     }));
