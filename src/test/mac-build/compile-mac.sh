@@ -1,4 +1,3 @@
-#cmake /Users/wangyaqiang/Documents/kwproj/ffkit/demo/CMakeLists.txt  -G Xcode -DCMAKE_TOOLCHAIN_FILE=/Users/wangyaqiang/Documents/kwproj/ffkit/ios-cmake/ios.toolchain.cmake
 script_dir=$(cd `dirname $0`; pwd)
 IOS_TOOLCHAIN=${script_dir}/ios-cmake/ios.toolchain.cmake
 BUILD_DIR=${script_dir}/build
@@ -40,10 +39,6 @@ function build_ios() {
         echo "MAC build success!!!"
     fi
 
-    # cmake /Users/wangyaqiang/Documents/kwproj/ffkit/demo/CMakeLists.txt -B $BUILD_DIR  -G Xcode -DCMAKE_TOOLCHAIN_FILE=../ios-cmake/ios.toolchain.cmake -DPLATFORM=OS -DARCHS=armv7 -DDEPLOYMENT_TARGET=9.0
-    # pushd build
-    # cmake --build . --config Release
-    # popd
 }
 
 function build_mac() {

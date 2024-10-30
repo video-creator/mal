@@ -1,7 +1,3 @@
-//
-// Created by wangyaqiang on 2023/4/3.
-//
-
 #include <iostream>
 #include <bitset>
 static void reverseOneBytesBitset(std::bitset<8> *set) {
