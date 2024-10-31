@@ -2,7 +2,7 @@
 #include <vector>
 #include <fstream>
 #include <unordered_set>
-
+#include "../deps/spdlog/fmt/fmt.h"
 extern "C" {
     #include "../../utils/cJSON.h"
 } 
@@ -105,7 +105,7 @@ tref box可以描述两track之间关系。
 比如：一个MP4文件中有三条video track，ID分别是2、3、4，以及三条audio track，ID分别是6、7、8。
 在播放track 2视频时到底应该采用6、7、8哪条音频与其配套播放？这时候就需要在track 2与6的tref box中指定一下，将2与6两条track绑定起来。
 **/
-    _parseTableEntry.push_back(std::make_tuple("moov|trak|tref|hint|font|vdep|vplx|subt|trgr|msrc|mdia|minf|udta", [=](std::shared_ptr<MDPAtom> atom) {
+    _parseTableEntry.push_back(std::make_tuple("moov|trak|tref|hint|font|vdep|vplx|subt|trgr|msrc|mdia|minf|udta|edts", [=](std::shared_ptr<MDPAtom> atom) {
         this->_parseChildAtom(atom); 
     }));
     //full box
@@ -250,6 +250,55 @@ tref box可以描述两track之间关系。
             atom->dataSource->skipBytes(pictureParameterSetLength);
         }
         this->_parseChildAtom(atom); 
+    }));
+    _parseTableEntry.push_back(std::make_tuple("avc1|avc2", [=](std::shared_ptr<MDPAtom> atom) {
+        std::vector<MDPAtomField> fields = {
+            MDPAtomField("reserved",6 * 8),
+            MDPAtomField("data_reference_index",2 * 8),
+            MDPAtomField("pre_defined",2 * 8),
+            MDPAtomField("reserved",2 * 8),
+            MDPAtomField("pre_defined",12 * 8),
+            MDPAtomField("width",2 * 8),
+            MDPAtomField("height",2 * 8),
+            MDPAtomField("horizresolution",4 * 8),
+            MDPAtomField("vertresolution",4 * 8),
+            MDPAtomField("reserved",4 * 8),
+            MDPAtomField("frame_count",2 * 8),
+            MDPAtomField("compressorname",32 * 8,MDPAtomField::DisplayType::vstring),
+            MDPAtomField("depth",2 * 8),
+            MDPAtomField("pre_defined",2 * 8),
+            
+        };
+        for (auto& el : fields) {
+            atom->writeField(el);
+        }
+        this->_parseChildAtom(atom); 
+    }));
+    _parseTableEntry.push_back(std::make_tuple("elst", [=](std::shared_ptr<MDPAtom> atom) {
+        int version = *(atom->writeField("version",1 * 8).as<uint64_t>());
+        atom->writeField("flags", 3* 8);
+        int entry_count = *(atom->writeField("entry_count",4 * 8).as<uint64_t>());
+        int segment_duration_size = 4;
+        int media_time_size = 4;
+        if(version == 1) {
+            segment_duration_size = 8;
+            media_time_size = 8;
+        }
+        for(int i = 1; i<= entry_count; i++) {
+            atom->writeField("segment_duration",segment_duration_size * 8);
+            atom->writeField("media_time",media_time_size * 8);
+            atom->writeField("media_rate_integer",2 * 8);
+            atom->writeField("media_rate_fraction",2 * 8);
+        }
+    }));
+    _parseTableEntry.push_back(std::make_tuple("stts", [=](std::shared_ptr<MDPAtom> atom) {
+        atom->writeField("version",1 * 8);
+        atom->writeField("flags", 3* 8);
+        int entry_count = *(atom->writeField("entry_count",4 * 8).as<uint64_t>());
+        for(int i = 0; i< entry_count; i++) {
+            atom->writeField(fmt::format("sample_count[{}]",i),4 * 8);
+            atom->writeField(fmt::format("sample_delta[{}]",i),4 * 8);
+        }
     }));
 }
 bool MP4Parser::supportFormat() {

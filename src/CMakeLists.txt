@@ -57,12 +57,12 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
 set(libmdp_name "mdp")
 set(libmdp_source_dir ${CMAKE_CURRENT_LIST_DIR}/sources)
 
-file(GLOB_RECURSE libmdp_source_files ${libmdp_source_dir}/**/**.c ${libmdp_source_dir}/**/**.cpp)
+file(GLOB_RECURSE libmdp_source_files ${libmdp_source_dir}/**/**.c ${libmdp_source_dir}/**/**.cpp ${libmdp_source_dir}/**/**.cc)
 
 message("libmdp_source_files: ${libmdp_source_files}")
 
 add_library(${libmdp_name} SHARED ${libmdp_source_files})
-target_include_directories(${libmdp_name} PUBLIC ${libmdp_source_dir})
+target_include_directories(${libmdp_name} PUBLIC ${libmdp_source_dir} ${libmdp_source_dir}/c++/deps)
 target_link_libraries( ${libmdp_name} ${FF_LIBS} libyuv  bz2 z lzma iconv "-framework CoreFoundation -framework AudioToolbox -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework Security" stdc++)
 
 # add_library(media_eye SHARED
