@@ -66,7 +66,7 @@ namespace mdp
         fast_any::any writeField(MDPAtomField field, std::string _extraVal="") {
             return writeField(field.name, field.bits, field.display_type,_extraVal,field.callback);
         }
-        fast_any::any writeField(std::string _name, int _bits, MDPAtomField::DisplayType type = MDPAtomField::DisplayType::vint64, std::string _extraVal="" , std::function<fast_any::any(fast_any::any)> callback = NULL) {
+        fast_any::any writeField(std::string _name, int64_t _bits, MDPAtomField::DisplayType type = MDPAtomField::DisplayType::vint64, std::string _extraVal="" , std::function<fast_any::any(fast_any::any)> callback = NULL) {
             if (_bits > 0) {
                 _name = _name + "(" + std::to_string(_bits) + "bits" + ")";
             }
@@ -114,6 +114,12 @@ namespace mdp
             fields.push_back(filed);
             return filed->val;
         }
+        template <class T = uint64_t>
+        T writeField(std::string _name, int64_t _bits, MDPAtomField::DisplayType type = MDPAtomField::DisplayType::vint64, std::string _extraVal="" , std::function<fast_any::any(fast_any::any)> callback = NULL) {
+            fast_any::any val = writeField(_name,_bits,type,_extraVal,callback);
+            return *(val.as<T>());
+        }
+
     };
     
 } // namespace mdp

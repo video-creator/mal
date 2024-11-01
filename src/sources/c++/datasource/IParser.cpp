@@ -14,6 +14,7 @@ IParser::IParser(const std::string& path, Type type) {
         av_assert0(true);
     }
     _datasource->open();
+
     
 }
 IParser::~IParser() {

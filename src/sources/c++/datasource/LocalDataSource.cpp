@@ -101,3 +101,16 @@ int64_t LocalDataSource::currentBitsPosition() {
 bool LocalDataSource::isEof() {
     return _bitsReader->position() == totalSize() * 8;
 }
+int64_t LocalDataSource::nextNonNullLength() {
+    if (isEof()) return 0;
+    int64_t current = 0;
+    int64_t size = 0;
+    current = currentBytesPosition();
+    while (!isEof() && readBytesInt64(1)) {
+    }
+    size = currentBytesPosition() - current;
+    if (size > 0) {
+        seekBytes(current,SEEK_SET);
+    }
+    return size;
+}

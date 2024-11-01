@@ -27,5 +27,6 @@ namespace mdp {
         uint8_t *_memoryData;
         size_t _memorySize;
         std::shared_ptr<bits::bitstream> _bitsReader;
+        int64_t nextNonNullLength();
     };
 }

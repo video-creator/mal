@@ -28,6 +28,7 @@ namespace mdp {
         virtual int64_t currentBytesPosition() = 0;
         virtual int64_t currentBitsPosition() = 0;
         virtual bool isEof() = 0;
+        virtual int64_t nextNonNullLength() = 0; //返回从当前位置开始，到下一个非0字符的长度
         private:
 
     };

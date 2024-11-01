@@ -19,7 +19,8 @@ namespace mdp {
         private:
         std::shared_ptr<MDPAtom> _rootAtom;
         int _parseAtom();
-        int _parseChildAtom(std::shared_ptr<mdp::MDPAtom> parent);
+        int _parseChildAtom(std::shared_ptr<mdp::MDPAtom> parent, bool once = false);
         std::vector<std::tuple<std::string,std::function<void(std::shared_ptr<mdp::MDPAtom>)>>> _parseTableEntry;
+        uint64_t _irefVersion;
     };
 }

@@ -21,6 +21,7 @@ void *mdp_dump_box(void *parser) {
     IParser *_parser = (IParser *)parser;
     _parser->startParse();
     _parser->dumpFormats();
+    return NULL;
 }
 #ifdef __cplusplus
 }
