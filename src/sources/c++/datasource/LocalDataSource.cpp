@@ -48,11 +48,27 @@ unsigned char * LocalDataSource::readBytesRaw(int64_t bytes, bool rewind) {
     }
     return data;
 }
-uint64_t LocalDataSource::readBitsInt64(int64_t bits_size, bool rewind) {
+uint64_t bigEndianToLittleEndian(uint64_t bigEndianValue) {
+    // 使用位移和按位与操作重新排列字节顺序
+    uint64_t byte0 = (bigEndianValue >> 56) & 0xFF;
+    uint64_t byte1 = (bigEndianValue >> 40) & 0xFF00;
+    uint64_t byte2 = (bigEndianValue >> 24) & 0xFF0000;
+    uint64_t byte3 = (bigEndianValue >> 8)  & 0xFF000000;
+    uint64_t byte4 = (bigEndianValue << 8)  & 0xFF00000000;
+    uint64_t byte5 = (bigEndianValue << 24) & 0xFF0000000000;
+    uint64_t byte6 = (bigEndianValue << 40) & 0xFF000000000000;
+    uint64_t byte7 = (bigEndianValue << 56) & 0xFF00000000000000;
+    
+    return byte0 | byte1 | byte2 | byte3 | byte4 | byte5 | byte6 | byte7;
+}
+uint64_t LocalDataSource::readBitsInt64(int64_t bits_size, bool rewind, int big) {
     int64_t current = _bitsReader->position();
     uint64_t ret = _bitsReader->read_at<uint64_t>(current,bits_size);
     if (!rewind) {
         _bitsReader->skip(bits_size);
+    }
+    if (bits_size > 8 && !big) {
+        ret = bigEndianToLittleEndian(ret);
     }
     return ret;
 }
@@ -76,7 +92,7 @@ void LocalDataSource::skipBits(int64_t position) {
 std::shared_ptr<IDataSource> LocalDataSource::readBytesStream(int64_t bytes, bool rewind) {
     return readBitsStream(bytes * 8, rewind);
 }
-uint64_t LocalDataSource::readBytesInt64(int64_t bytes, bool rewind) {
+uint64_t LocalDataSource::readBytesInt64(int64_t bytes, bool rewind, int big) {
     return readBitsInt64(bytes * 8, rewind);
 }
 std::string LocalDataSource::readBytesString(int64_t bytes, bool rewind) {

@@ -13,7 +13,7 @@ namespace mdp {
         MP4Parser(const std::shared_ptr<IDataSource>& datasource);
         MP4Parser(const std::string& path, Type type);
         int startParse();
-        std::string dumpFormats();
+        std::string dumpFormats(int full = 0);
         void loadPackets(int size);
         bool supportFormat();
         private:

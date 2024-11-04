@@ -111,7 +111,7 @@ MP4Parser::MP4Parser(const std::string &path, Type type) : IParser(path, type) {
      box中指定一下，将2与6两条track绑定起来。
      **/
     _parseTableEntry.push_back(std::make_tuple(
-                                               "moov|trak|tref|hint|font|vdep|vplx|subt|trgr|msrc|mdia|minf|udta|edts|iprp|ipco",
+                                               "moov|trak|tref|hint|font|vdep|vplx|subt|trgr|msrc|mdia|minf|udta|edts|iprp|ipco|moof|traf|mvex|hoov",
                                                [=](std::shared_ptr<MDPAtom> atom) { this->_parseChildAtom(atom); }));
     // full box
     _parseTableEntry.push_back(
@@ -205,7 +205,7 @@ MP4Parser::MP4Parser(const std::string &path, Type type) : IParser(path, type) {
                                    for (auto &el : fields) {
                                        atom->writeField(el);
                                    }
-                                   atom->writeField("samplerate", 4 * 8, MDPAtomField::DisplayType::vint64,
+                                   atom->writeField("samplerate", 4 * 8, MDPAtomField::DisplayType::vint64,1,
                                                     ">>16", [=](fast_any::any val) {
                                        uint64_t ori = *(val.as<uint64_t>());
                                        ori = (ori >> 16);
@@ -253,7 +253,7 @@ MP4Parser::MP4Parser(const std::string &path, Type type) : IParser(path, type) {
                                        
                                        MDPAtomField("reserved", 3),
                                        MDPAtomField("numOfSequenceParameterSets", 5,
-                                                    mdp::MDPAtomField::DisplayType::vint64,
+                                                    mdp::MDPAtomField::DisplayType::vint64,1,
                                                     [=, &numOfSequenceParameterSets](fast_any::any val) {
                                            uint64_t ori = *(val.as<uint64_t>());
                                            numOfSequenceParameterSets = ori;
@@ -266,16 +266,17 @@ MP4Parser::MP4Parser(const std::string &path, Type type) : IParser(path, type) {
                                    for (int i = 0; i < numOfSequenceParameterSets; i++) {
                                        uint64_t sequenceParameterSetLength =
                                        atom->writeField<uint64_t>("sequenceParameterSetLength", 2 * 8);
-                                       atom->dataSource->skipBytes(sequenceParameterSetLength);
+//                                       atom->dataSource->skipBytes(sequenceParameterSetLength);
+                                       atom->writeField("sps_nal_data",sequenceParameterSetLength * 8,MDPAtomField::DisplayType::vhex);
                                    }
                                    uint64_t numOfPictureParameterSets =
                                    atom->writeField<uint64_t>("numOfPictureParameterSets", 1 * 8);
                                    for (int i = 0; i < numOfPictureParameterSets; i++) {
                                        uint64_t pictureParameterSetLength =
                                        atom->writeField<uint64_t>("pictureParameterSetLength", 2 * 8);
-                                       atom->dataSource->skipBytes(pictureParameterSetLength);
+//                                       atom->dataSource->skipBytes(pictureParameterSetLength);
+                                       atom->writeField("pps_nal_data",pictureParameterSetLength * 8,MDPAtomField::DisplayType::vhex);
                                    }
-                                   this->_parseChildAtom(atom);
                                }));
     _parseTableEntry.push_back(
                                std::make_tuple("avc1|avc2", [=](std::shared_ptr<MDPAtom> atom) {
@@ -532,6 +533,201 @@ MP4Parser::MP4Parser(const std::string &path, Type type) : IParser(path, type) {
                                        atom->writeField("to_item_ID", to_item_ID_bytes * 8);
                                    }
                                }));
+    _parseTableEntry.push_back(
+                               std::make_tuple("ipma", [=](std::shared_ptr<MDPAtom> atom) { //对于heif描述了item_id 和 ipco的关系
+                                   uint64_t version = atom->writeField<uint64_t>("version", 1 * 8);
+                                   uint64_t flags = atom->writeField<uint64_t>("flags", 3 * 8);
+                                   uint64_t entry_count = atom->writeField<uint64_t>("entry_count", 4 * 8);
+                                   for(int i = 0; i < entry_count; i++) {
+                                       int item_id_size = version < 1 ? 2 : 4;
+                                       atom->writeField("item_ID", item_id_size * 8);
+                                       uint64_t association_count = atom->writeField<uint64_t>("association_count", 1 * 8);
+                                       for(int i = 0; i<association_count;i++) {
+                                           atom->writeField("essential", 1); //必不可少的
+                                           if(flags & 1) {
+                                               atom->writeField("property_index", 15);
+                                           } else {
+                                               atom->writeField("property_index", 7);
+                                           }
+                                       }
+                                   }
+                               }));
+    _parseTableEntry.push_back(
+                               std::make_tuple("sidx", [=](std::shared_ptr<MDPAtom> atom) { //对于heif描述了item_id 和 ipco的关系
+                                   uint64_t version = atom->writeField<uint64_t>("version", 1 * 8);
+                                   atom->writeField("flags", 3 * 8);
+                                   atom->writeField("reference_ID", 4 * 8);
+                                   atom->writeField("timescale", 4 * 8);
+                                   int earliest_presentation_time_size = 4;
+                                   int first_offset_size = 4;
+                                   if(version != 0) {
+                                       earliest_presentation_time_size = 8;
+                                       first_offset_size = 8;
+                                   }
+                                   atom->writeField("earliest_presentation_time", earliest_presentation_time_size * 8);
+                                   atom->writeField("first_offset", first_offset_size * 8);
+                                   atom->writeField("reserved", 2 * 8);
+                                   uint64_t reference_count = atom->writeField<uint64_t>("reference_count", 2 * 8);
+                                   for(int i = 0; i < reference_count; i++) {
+                                       atom->writeField("reference_type", 1);
+                                       atom->writeField("referenced_size", 31);
+                                       atom->writeField("subsegment_duration", 32);
+                                       atom->writeField("starts_with_SAP", 1);
+                                       atom->writeField("SAP_type", 3);
+                                       atom->writeField("SAP_delta_time", 28);
+                                   }
+                               }));
+    _parseTableEntry.push_back(
+                               std::make_tuple("tfhd", [=](std::shared_ptr<MDPAtom> atom) { //对于heif描述了item_id 和 ipco的关系
+                                   uint64_t version = atom->writeField<uint64_t>("version", 1 * 8);
+                                   uint64_t flags = atom->writeField<uint64_t>("flags", 3 * 8);
+                                   uint64_t track_ID = atom->writeField<uint64_t>("track_ID", 4 * 8);
+                                   if(flags & 0x01 ) {
+                                       atom->writeField("base_data_offset", 8 * 8);
+                                   }
+                                   if(flags & 0x02 ) {
+                                       atom->writeField("sample_description_index", 4 * 8);
+                                   }
+                                   if(flags & 0x08 ) {
+                                       atom->writeField("default_sample_duration", 4 * 8);
+                                   }
+                                   if(flags & 0x10 ) {
+                                       atom->writeField("default_sample_size", 4 * 8);
+                                   }
+                                   if(flags & 0x20 ) {
+                                       atom->writeField("default_sample_flags", 4 * 8);
+                                   }
+                               }));
+    _parseTableEntry.push_back(
+                               std::make_tuple("trun", [=](std::shared_ptr<MDPAtom> atom) { //对于heif描述了item_id 和 ipco的关系
+                                   uint64_t version = atom->writeField<uint64_t>("version", 1 * 8);
+                                   uint64_t flags = atom->writeField<uint64_t>("flags", 3 * 8);
+                                   uint64_t sample_count = atom->writeField<uint64_t>("sample_count", 4 * 8);
+                                   if(flags & 0x000001) {
+                                       atom->writeField("data_offset", 4 * 8);
+                                   }
+                                   if(flags & 0x000004) {
+                                       atom->writeField("first_sample_flags", 4 * 8);
+                                   }
+                                   for(int i = 0; i< sample_count; i++) {
+                                       if(flags & 0x000100) {
+                                           atom->writeField("sample_duration", 4 * 8);
+                                       }
+                                       if(flags & 0x000200) {
+                                           atom->writeField("sample_size", 4 * 8);
+                                       }
+                                       if(flags & 0x000400) {
+                                           atom->writeField("sample_flags", 4 * 8);
+                                       }
+                                       if(flags & 0x000800) {
+                                           atom->writeField("sample_composition_time_offset", 4 * 8);
+                                       }
+                                   }
+                               }));
+    _parseTableEntry.push_back(
+                               std::make_tuple("trex", [=](std::shared_ptr<MDPAtom> atom) {
+                                   std::vector<MDPAtomField> fields = {
+                                       MDPAtomField("version", 1 * 8),
+                                       MDPAtomField("flags", 3 * 8),
+                                       MDPAtomField("track_ID", 4 * 8),
+                                       MDPAtomField("default_sample_description_index", 4 * 8),
+                                       MDPAtomField("default_sample_duration", 4 * 8),
+                                       MDPAtomField("default_sample_size", 4 * 8),
+                                       MDPAtomField("default_sample_flags", 4 * 8),
+                                   };
+                                   for (auto &el : fields) {
+                                       atom->writeField(el);
+                                   }
+                               }));
+    _parseTableEntry.push_back(
+                               std::make_tuple("tfdt", [=](std::shared_ptr<MDPAtom> atom) { //对于heif描述了item_id 和 ipco的关系
+                                   uint64_t version = atom->writeField<uint64_t>("version", 1 * 8);
+                                   uint64_t flags = atom->writeField<uint64_t>("flags", 3 * 8);
+                                   int baseMediaDecodeTimeSize = 4;
+                                   if(version == 1) {
+                                       baseMediaDecodeTimeSize = 8;
+                                   }
+                                   atom->writeField("baseMediaDecodeTime", baseMediaDecodeTimeSize * 8);
+                               }));
+    _parseTableEntry.push_back(
+                               std::make_tuple("mfhd", [=](std::shared_ptr<MDPAtom> atom) { //对于heif描述了item_id 和 ipco的关系
+                                   uint64_t version = atom->writeField<uint64_t>("version", 1 * 8);
+                                   uint64_t flags = atom->writeField<uint64_t>("flags", 3 * 8);
+                                   atom->writeField("sequence_number", 4 * 8);
+                               }));
+    _parseTableEntry.push_back(
+                               std::make_tuple("hvc1|hev1", [=](std::shared_ptr<MDPAtom> atom) {
+                                   std::vector<MDPAtomField> fields = {
+                                       MDPAtomField("reserved", 6 * 8),
+                                       MDPAtomField("data_reference_index", 2 * 8),
+                                       MDPAtomField("pre_defined", 2 * 8),
+                                       MDPAtomField("reserved", 2 * 8),
+                                       MDPAtomField("pre_defined", 12 * 8),
+                                       MDPAtomField("width", 2 * 8),
+                                       MDPAtomField("height", 2 * 8),
+                                       MDPAtomField("horizresolution", 4 * 8, mdp::MDPAtomField::DisplayType::vhex), //0x00480000; // 72 dpi
+                                       MDPAtomField("vertresolution", 4 * 8, mdp::MDPAtomField::DisplayType::vhex),
+                                       MDPAtomField("reserved", 4 * 8),
+                                       MDPAtomField("frame_count", 2 * 8),
+                                       MDPAtomField("compressorname", 32 * 8, mdp::MDPAtomField::DisplayType::vstring),
+                                       MDPAtomField("depth", 2 * 8),
+                                       MDPAtomField("pre_defined", 2 * 8),
+                                   };
+                                   for (auto &el : fields) {
+                                       atom->writeField(el);
+                                   }
+                                   this->_parseChildAtom(atom);
+                               }));
+    _parseTableEntry.push_back(
+                               std::make_tuple("hvcC", [=](std::shared_ptr<MDPAtom> atom) { //对于heif描述了item_id 和 ipco的关系
+                                   std::vector<MDPAtomField> fields = {
+                                       MDPAtomField("configurationVersion", 1 * 8),
+                                       MDPAtomField("general_profile_space", 2),
+                                       MDPAtomField("general_tier_flag", 1),
+                                       MDPAtomField("general_profile_idc", 5),
+                                       MDPAtomField("general_profile_compatibility_flags", 4 * 8),
+                                       MDPAtomField("general_constraint_indicator_flags", 6 * 8),
+                                       MDPAtomField("general_level_idc", 1 * 8),
+                                       MDPAtomField("reserved", 4),
+                                       MDPAtomField("min_spatial_segmentation_idc", 12),
+                                       MDPAtomField("reserved", 6),
+                                       MDPAtomField("parallelismType", 2),
+                                       MDPAtomField("reserved", 6),
+                                       MDPAtomField("chroma_format_idc", 2),
+                                       MDPAtomField("reserved", 5),
+                                       MDPAtomField("bit_depth_luma_minus8", 3),
+                                       MDPAtomField("reserved", 5),
+                                       MDPAtomField("bit_depth_chroma_minus8", 3),
+                                       MDPAtomField("avgFrameRate", 16),
+                                       MDPAtomField("constantFrameRate", 2),
+                                       MDPAtomField("numTemporalLayers", 3),
+                                       MDPAtomField("temporalIdNested", 1),
+                                       MDPAtomField("lengthSizeMinusOne", 2),
+                                   };
+                                   for (auto &el : fields) {
+                                       atom->writeField(el);
+                                   }
+                                   uint64_t numOfArrays = atom->writeField<uint64_t>("numOfArrays",8, MDPAtomField::DisplayType::vint64);
+                                   for(int j = 0; j < numOfArrays; j++) {
+                                       atom->writeField("array_completeness",1);
+                                       atom->writeField("reserved",1);
+                                       atom->writeField("NAL_unit_type",6);
+                                       uint64_t numNalus = atom->writeField<uint64_t>("numNalus",2 * 8);
+                                       for(int i = 0; i< numNalus; i++) {
+                                           uint64_t nalUnitLength = atom->writeField<uint64_t>("nalUnitLength",2 * 8);
+                                           //atom->dataSource->seekBytes(nalUnitLength);
+                                           atom->writeField("nal_data",nalUnitLength * 8,MDPAtomField::DisplayType::vhex);
+                                       }
+                                   }
+                                   
+                               }));
+    _parseTableEntry.push_back(
+                               std::make_tuple("ispe", [=](std::shared_ptr<MDPAtom> atom) { //对于heif描述了item_id 和 ipco的关系
+                                   uint64_t version = atom->writeField<uint64_t>("version", 1 * 8);
+                                   uint64_t flags = atom->writeField<uint64_t>("flags", 3 * 8);
+                                   atom->writeField("image_width", 4 * 8);
+                                   atom->writeField("image_height", 4 * 8);
+                               }));
 }
 bool MP4Parser::supportFormat() {
   if (_datasource->totalSize() < 8)
@@ -546,46 +742,49 @@ bool MP4Parser::supportFormat() {
 
   return false;
 }
-static cJSON *dumpBox(std::vector<std::shared_ptr<mdp::MDPAtom>> atoms) {
-  cJSON *array = cJSON_CreateArray();
-  for (auto &atom : atoms) {
-    cJSON *obj = cJSON_CreateObject();
-    cJSON *attr_obj = cJSON_CreateObject();
-    cJSON_AddNumberToObject(attr_obj, "size", atom->size);
-    cJSON_AddNumberToObject(attr_obj, "pos", atom->pos);
-    cJSON_AddItemToObject(obj, atom->name.c_str(), attr_obj);
-    cJSON_AddItemToArray(array, obj);
-    for (auto &filed : atom->fields) {
-      if (filed->display_type == mdp::MDPAtomField::DisplayType::vint64 &&
-          filed->val.has_value()) {
-        cJSON_AddNumberToObject(attr_obj, filed->name.c_str(),
-                                *(filed->val.as<uint64_t>()));
-      } else if (filed->display_type ==
-                     mdp::MDPAtomField::DisplayType::vstring &&
-                 filed->val.has_value()) {
-        cJSON_AddStringToObject(attr_obj, filed->name.c_str(),
-                                filed->val.as<std::string>()->c_str());
-      } else if (filed->display_type ==
-                     mdp::MDPAtomField::DisplayType::vdouble &&
-                 filed->val.has_value()) {
-        cJSON_AddNumberToObject(attr_obj, filed->name.c_str(),
-                                (*filed->val.as<double>()));
-      }
+static cJSON *dumpBox(std::vector<std::shared_ptr<mdp::MDPAtom>> atoms, int full) {
+    cJSON *array = cJSON_CreateArray();
+    for (auto &atom : atoms) {
+        cJSON *obj = cJSON_CreateObject();
+        cJSON *attr_obj = cJSON_CreateObject();
+        cJSON_AddNumberToObject(attr_obj, "size", atom->size);
+        cJSON_AddNumberToObject(attr_obj, "pos", atom->pos);
+        cJSON_AddItemToObject(obj, atom->name.c_str(), attr_obj);
+        cJSON_AddItemToArray(array, obj);
+        if (full) {
+            for (auto &filed : atom->fields) {
+                if (filed->display_type == mdp::MDPAtomField::DisplayType::vint64 &&
+                    filed->val.has_value()) {
+                    cJSON_AddNumberToObject(attr_obj, filed->name.c_str(),
+                                            *(filed->val.as<uint64_t>()));
+                } else if (filed->display_type ==
+                           mdp::MDPAtomField::DisplayType::vstring &&
+                           filed->val.has_value()) {
+                    cJSON_AddStringToObject(attr_obj, filed->name.c_str(),
+                                            filed->val.as<std::string>()->c_str());
+                } else if (filed->display_type ==
+                           mdp::MDPAtomField::DisplayType::vdouble &&
+                           filed->val.has_value()) {
+                    cJSON_AddNumberToObject(attr_obj, filed->name.c_str(),
+                                            (*filed->val.as<double>()));
+                }
+            }
+        }
+        
+        
+        if (atom->childBoxs.size() > 0) {
+            cJSON *child_array = dumpBox(atom->childBoxs, full);
+            if (child_array) {
+                cJSON_AddItemToObject(attr_obj, "children", child_array);
+            }
+        }
     }
-
-    if (atom->childBoxs.size() > 0) {
-      cJSON *child_array = dumpBox(atom->childBoxs);
-      if (child_array) {
-        cJSON_AddItemToObject(attr_obj, "children", child_array);
-      }
-    }
-  }
-  return array;
+    return array;
 }
-std::string MP4Parser::dumpFormats() {
+std::string MP4Parser::dumpFormats(int full) {
   if (_rootAtom) {
     std::vector<std::shared_ptr<MDPAtom>> atoms = {_rootAtom};
-    cJSON *json = dumpBox(atoms);
+    cJSON *json = dumpBox(atoms,full);
     char *string = cJSON_Print(json);
     std::cout << string << std::endl;
     std::string filename = "/Users/Shared/output.json";

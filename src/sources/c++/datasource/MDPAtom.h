@@ -28,11 +28,12 @@ namespace mdp
             bits = _bits;
             extraVal = _extraVal;
         }
-        MDPAtomField(std::string _name, int _bits, DisplayType type = DisplayType::vint64 , std::function<fast_any::any(fast_any::any)> _callback = NULL) {
+        MDPAtomField(std::string _name, int _bits, DisplayType type = DisplayType::vint64 , int _big =1, std::function<fast_any::any(fast_any::any)> _callback = NULL) {
             name = _name;
             bits = _bits;
             display_type = type;
             callback = _callback;
+            big = _big;
         }
         template <typename ValueType>
         void putValue(ValueType newValue, DisplayType type) {
@@ -47,6 +48,7 @@ namespace mdp
         int bits;
         DisplayType display_type = DisplayType::vint64; //显示int
         std::function<fast_any::any(fast_any::any)> callback;
+        int big = 1;
     };
 
     class MDPAtom {
@@ -63,10 +65,10 @@ namespace mdp
             ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << value;  // 2 位宽，前面填充零
             return ss.str();
         }
-        fast_any::any writeField(MDPAtomField field, std::string _extraVal="") {
-            return writeField(field.name, field.bits, field.display_type,_extraVal,field.callback);
+        fast_any::any writeField(MDPAtomField field, int big = 1, std::string _extraVal="") {
+            return writeField(field.name, field.bits, field.display_type,big, _extraVal,field.callback);
         }
-        fast_any::any writeField(std::string _name, int64_t _bits, MDPAtomField::DisplayType type = MDPAtomField::DisplayType::vint64, std::string _extraVal="" , std::function<fast_any::any(fast_any::any)> callback = NULL) {
+        fast_any::any writeField(std::string _name, int64_t _bits, MDPAtomField::DisplayType type = MDPAtomField::DisplayType::vint64,int big = 1, std::string _extraVal="" , std::function<fast_any::any(fast_any::any)> callback = NULL) {
             if (_bits > 0) {
                 _name = _name + "(" + std::to_string(_bits) + "bits" + ")";
             }
@@ -75,7 +77,7 @@ namespace mdp
             }
             auto filed = std::make_shared<MDPAtomField>(_name,dataSource->currentBitsPosition(),_bits,_extraVal);
             if (type == MDPAtomField::DisplayType::vint64) {
-                uint64_t val = dataSource->readBitsInt64(_bits);
+                uint64_t val = dataSource->readBitsInt64(_bits,0, big);
                 filed->putValue<uint64_t>(val,MDPAtomField::DisplayType::vint64);
             } else if (type == MDPAtomField::DisplayType::vstring) {
                 std::string val = dataSource->readBytesString(_bits/8);
@@ -92,7 +94,7 @@ namespace mdp
                 }
                 filed->putValue<std::string>(val,MDPAtomField::DisplayType::vstring);
             } else if (type == MDPAtomField::DisplayType::vdouble) {
-                int64_t value = dataSource->readBitsInt64(_bits);
+                int64_t value = dataSource->readBitsInt64(_bits,0,big);
                 union tmp {
                     int64_t a;
                     double b;
@@ -115,8 +117,8 @@ namespace mdp
             return filed->val;
         }
         template <class T = uint64_t>
-        T writeField(std::string _name, int64_t _bits, MDPAtomField::DisplayType type = MDPAtomField::DisplayType::vint64, std::string _extraVal="" , std::function<fast_any::any(fast_any::any)> callback = NULL) {
-            fast_any::any val = writeField(_name,_bits,type,_extraVal,callback);
+        T writeField(std::string _name, int64_t _bits, MDPAtomField::DisplayType type = MDPAtomField::DisplayType::vint64, int big = 1, std::string _extraVal="" , std::function<fast_any::any(fast_any::any)> callback = NULL) {
+            fast_any::any val = writeField(_name,_bits,type,big,_extraVal,callback);
             return *(val.as<T>());
         }
 

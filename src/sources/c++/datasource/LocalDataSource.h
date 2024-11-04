@@ -7,9 +7,9 @@ namespace mdp {
         LocalDataSource(uint8_t * memoryData, int64_t size, bool copy = false);
         int open();
         std::shared_ptr<IDataSource> readBitsStream(int64_t bits_size, bool rewind = false);
-        uint64_t readBitsInt64(int64_t bits_size, bool rewind = false);
+        uint64_t readBitsInt64(int64_t bits_size, bool rewind = false, int big = 1);
         std::shared_ptr<IDataSource> readBytesStream(int64_t bytes, bool rewind = false);
-        uint64_t readBytesInt64(int64_t bytes, bool rewind = false);
+        uint64_t readBytesInt64(int64_t bytes, bool rewind = false, int big = 1);
         std::string readBytesString(int64_t bytes, bool rewind = false);
 
         int64_t totalSize() { //bytes

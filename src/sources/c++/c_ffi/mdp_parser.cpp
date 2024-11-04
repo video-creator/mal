@@ -20,7 +20,7 @@ void* mdp_create_parser(char *path) {
 void *mdp_dump_box(void *parser) {
     IParser *_parser = (IParser *)parser;
     _parser->startParse();
-    _parser->dumpFormats();
+    _parser->dumpFormats(1);
     return NULL;
 }
 #ifdef __cplusplus

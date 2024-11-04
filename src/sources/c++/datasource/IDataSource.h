@@ -15,9 +15,9 @@ namespace mdp {
         Type type;
         virtual int open() = 0;
         virtual std::shared_ptr<IDataSource> readBitsStream(int64_t bits_size, bool rewind = false) = 0;
-        virtual uint64_t readBitsInt64(int64_t bits_size, bool rewind = false) = 0;
+        virtual uint64_t readBitsInt64(int64_t bits_size, bool rewind = false, int big = 1) = 0;
         virtual std::shared_ptr<IDataSource> readBytesStream(int64_t bytes, bool rewind = false) = 0;
-        virtual uint64_t readBytesInt64(int64_t bytes, bool rewind = false) = 0;
+        virtual uint64_t readBytesInt64(int64_t bytes, bool rewind = false, int big = 1) = 0;
         virtual std::string readBytesString(int64_t bytes, bool rewind = false) = 0;
 
         virtual void seekBytes(int64_t position, int whence = SEEK_CUR) = 0;
