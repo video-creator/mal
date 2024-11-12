@@ -1,10 +1,10 @@
-#include "IDataSource.h"
-#include "LocalDataSource.h"
+#include "mal_idatasource.h"
+#include "mal_local_datasource.h"
 extern "C" {
     #include  <libavutil/mem.h>
     #include "libavutil/file.h"
 }
-using namespace mdp;
+using namespace mal;
 LocalDataSource::LocalDataSource(const std::string& path):_path(path) {
     
 }
@@ -24,8 +24,11 @@ int LocalDataSource::open() {
     if (_path.length() > 0) {
         ret = av_file_map(_path.c_str(),&_memoryData,&_memorySize,0,NULL);
     }
-    _bitsReader =  std::make_shared<bits::bitstream>((unsigned char *)_memoryData,_memorySize);
+    _bitsReader =  std::make_shared<mal::BitStream>((unsigned char *)_memoryData,_memorySize);
     return ret;
+}
+int64_t LocalDataSource::lastBytes() {
+    return totalSize() - currentBytesPosition();
 }
 std::shared_ptr<IDataSource> LocalDataSource::readBitsStream(int64_t bits_size, bool rewind) {
     if (!_bitsReader->aligned()) {
@@ -48,27 +51,36 @@ unsigned char * LocalDataSource::readBytesRaw(int64_t bytes, bool rewind) {
     }
     return data;
 }
-uint64_t bigEndianToLittleEndian(uint64_t bigEndianValue) {
-    // 使用位移和按位与操作重新排列字节顺序
-    uint64_t byte0 = (bigEndianValue >> 56) & 0xFF;
-    uint64_t byte1 = (bigEndianValue >> 40) & 0xFF00;
-    uint64_t byte2 = (bigEndianValue >> 24) & 0xFF0000;
-    uint64_t byte3 = (bigEndianValue >> 8)  & 0xFF000000;
-    uint64_t byte4 = (bigEndianValue << 8)  & 0xFF00000000;
-    uint64_t byte5 = (bigEndianValue << 24) & 0xFF0000000000;
-    uint64_t byte6 = (bigEndianValue << 40) & 0xFF000000000000;
-    uint64_t byte7 = (bigEndianValue << 56) & 0xFF00000000000000;
+int64_t bigEndianToLittleEndian(int64_t bigEndianValue, int64_t bytes_size) {
+    int64_t littleEndianValue = 0;
     
-    return byte0 | byte1 | byte2 | byte3 | byte4 | byte5 | byte6 | byte7;
-}
-uint64_t LocalDataSource::readBitsInt64(int64_t bits_size, bool rewind, int big) {
-    int64_t current = _bitsReader->position();
-    uint64_t ret = _bitsReader->read_at<uint64_t>(current,bits_size);
-    if (!rewind) {
-        _bitsReader->skip(bits_size);
+    for (int i = 0; i < bytes_size; ++i) {
+        littleEndianValue |= ((bigEndianValue >> (8 * i)) & 0xFF) << (8 * (bytes_size - 1 - i));
     }
-    if (bits_size > 8 && !big) {
-        ret = bigEndianToLittleEndian(ret);
+    
+    return littleEndianValue;
+}
+
+uint64_t LocalDataSource::readBitsInt64(int64_t bits_size, bool rewind, int big, bool convert_rbsp) {
+    int64_t current = _bitsReader->position();
+    int64_t ret = 0;
+    if (!big) {
+//        int64_t temp = (bits_size / 8 + 1 ) * 8;
+//        int64_t more = temp - bits_size;
+//        ret = _bitsReader->readBits(temp,convert_rbsp);
+//        ret = bigEndianToLittleEndian(ret,temp/8);
+//        ret = (ret & (0xffff >> more));
+//        _bitsReader->skip(-more);
+        ret = _bitsReader->readLittleBits(bits_size,convert_rbsp);
+    } else {
+        ret = _bitsReader->readBits(bits_size,convert_rbsp);//_bitsReader->read_at<uint64_t>(current,bits_size);
+//        if (bits_size > 8 && bits_size % 8 == 0 && !big) {
+//            ret = bigEndianToLittleEndian(ret,bits_size/8);
+//        }
+    }
+    
+    if (rewind) {
+        _bitsReader->seek(current);//_bitsReader->skip(bits_size);
     }
     return ret;
 }
@@ -92,10 +104,11 @@ void LocalDataSource::skipBits(int64_t position) {
 std::shared_ptr<IDataSource> LocalDataSource::readBytesStream(int64_t bytes, bool rewind) {
     return readBitsStream(bytes * 8, rewind);
 }
-uint64_t LocalDataSource::readBytesInt64(int64_t bytes, bool rewind, int big) {
-    return readBitsInt64(bytes * 8, rewind);
+uint64_t LocalDataSource::readBytesInt64(int64_t bytes, bool rewind, int big, bool convert_rbsp) {
+    return readBitsInt64(bytes * 8, rewind,big, convert_rbsp);
 }
 std::string LocalDataSource::readBytesString(int64_t bytes, bool rewind) {
+    int64_t current = currentBitsPosition();
     std::string result = "";
     for (int i = 0; i < bytes; i++) {
         int64_t val = readBytesInt64(1);
@@ -106,10 +119,19 @@ std::string LocalDataSource::readBytesString(int64_t bytes, bool rewind) {
             result += "[" + std::to_string(static_cast<int>(val)) + "]"; // 也可以使用 std::hex 转换
         }
     }
+    if (rewind) {
+        _bitsReader->seek(current);
+    }
     return result;
 }
 int64_t LocalDataSource::currentBytesPosition() {
     return _bitsReader->position() / 8;
+}
+unsigned char *LocalDataSource::current() {
+    return _bitsReader->current();
+}
+unsigned char *LocalDataSource::ptr() {
+    return _bitsReader->ptr();
 }
 int64_t LocalDataSource::currentBitsPosition() {
     return _bitsReader->position();
@@ -129,4 +151,10 @@ int64_t LocalDataSource::nextNonNullLength() {
         seekBytes(current,SEEK_SET);
     }
     return size;
+}
+
+std::shared_ptr<IDataSource> LocalDataSource::shallowCopy() {
+    std::shared_ptr<LocalDataSource> datasource = std::make_shared<LocalDataSource>(ptr(), totalSize());
+    datasource->open();
+    return datasource;
 }
