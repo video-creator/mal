@@ -314,31 +314,6 @@ void MP4Parser::registerParserTableEntry_() {
                                    }
                                }));
     _parseTableEntry.push_back(
-                               std::make_tuple("avc1|avc2", [=](std::shared_ptr<MDPAtom> atom) {
-                                   std::vector<MDPAtomField> fields = {
-                                       MDPAtomField("reserved", 6 * 8),
-                                       MDPAtomField("data_reference_index", 2 * 8),
-                                       MDPAtomField("pre_defined", 2 * 8),
-                                       MDPAtomField("reserved", 2 * 8),
-                                       MDPAtomField("pre_defined", 12 * 8),
-                                       MDPAtomField("width", 2 * 8),
-                                       MDPAtomField("height", 2 * 8),
-                                       MDPAtomField("horizresolution", 4 * 8),
-                                       MDPAtomField("vertresolution", 4 * 8),
-                                       MDPAtomField("reserved", 4 * 8),
-                                       MDPAtomField("frame_count", 2 * 8),
-                                       MDPAtomField("compressorname", 32 * 8,
-                                                    MDPFieldDisplayType_string),
-                                       MDPAtomField("depth", 2 * 8),
-                                       MDPAtomField("pre_defined", 2 * 8),
-                                       
-                                   };
-                                   for (auto &el : fields) {
-                                       atom->writeField(el);
-                                   }
-                                   this->_parseChildAtom(atom);
-                               }));
-    _parseTableEntry.push_back(
                                std::make_tuple("elst", [=](std::shared_ptr<MDPAtom> atom) {
                                    uint64_t version = atom->writeField<uint64_t>("version", 1 * 8);
                                    atom->writeField("flags", 3 * 8);
@@ -857,14 +832,14 @@ int MP4Parser::_parseChildAtom(std::shared_ptr<MDPAtom> parent, bool once) {
   while (!datasource->isEof()) {
     std::shared_ptr<MDPAtom> atom = std::make_shared<MDPAtom>();
     atom->pos = datasource->currentBytesPosition();
-    atom->size = rbytes_i(datasource, 4);
+    atom->size = rbytes_i(4);
     if (atom->size == 0) {
       return 0;
     }
-    atom->name = rbytes_s(datasource, 4);
+    atom->name = rbytes_s(4);
     atom->headerSize = 8;
     if (atom->size == 1) {
-      atom->size = rbytes_i(datasource, 8);
+      atom->size = rbytes_i(8);
       atom->headerSize += 8;
     }
     int64_t cur = datasource->currentBytesPosition();

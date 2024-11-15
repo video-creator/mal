@@ -1,11 +1,11 @@
 #pragma once
 #include "mal_idatasource.h"
 #include "mal_atom.h"
-#define rbits_i(datasource, bits) datasource->readBitsInt64(bits)
-#define rbytes_i(datasource, bits) datasource->readBytesInt64(bits)
-#define rbits_i_little(datasource, bits) datasource->readBitsInt64(bits,false,0)
-#define rbytes_i_little(datasource, bits) datasource->readBytesInt64(bits,false,0)
-#define rbytes_s(datasource, bits) datasource->readBytesString(bits)
+#define rbits_i(bits) datasource->readBitsInt64(bits)
+#define rbytes_i(bits) datasource->readBytesInt64(bits)
+#define rbits_i_little(bits) datasource->readBitsInt64(bits,false,0)
+#define rbytes_i_little(bits) datasource->readBytesInt64(bits,false,0)
+#define rbytes_s(bits) datasource->readBytesString(bits)
 namespace mal {
     class IParser {
         public:

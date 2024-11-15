@@ -46,8 +46,8 @@ int WEBPParser::_parseChildAtom(std::shared_ptr<MDPAtom> parent, bool once) {
     while (!datasource->isEof()) {
         std::shared_ptr<MDPAtom> atom = std::make_shared<MDPAtom>();
         atom->pos = datasource->currentBytesPosition();
-        atom->name = rbytes_s(datasource, 4);
-        atom->size = rbytes_i_little(datasource, 4) + 8;
+        atom->name = rbytes_s(4);
+        atom->size = rbytes_i_little(4) + 8;
         atom->size += atom->size & 1; //注意，必须是偶数
         if (atom->size == 0) {
             return 0;
