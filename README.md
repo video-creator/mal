@@ -1,7 +1,47 @@
 # MAL （Media Analysis Tool ）
 媒体分析工具
 ## 支持格式
-- [ ] MP4 开发中,当前根据标准文档对box进行解析
+FMP4/MP4/HEIF/MOV box进行解析，包括
+- [x] ftyp
+- [x] mvhd
+- [x] tkhd
+- [x] moov|trak|tref|hint|font|vdep|vplx|subt|trgr|msrc|mdia|minf|udta|edts|iprp|ipco|moof|traf|mvex|hoov
+- [x] meta
+- [x] mdhd
+- [x] hdlr
+- [x] elng
+- [x] stbl
+- [x] stsd
+- [x] mp4a|ipcm|fpcm
+- [x] avc1|avc2
+- [x] avcC
+- [x] elst
+- [x] stts
+- [x] stss
+- [x] ctts
+- [x] stsh
+- [x] stco
+- [x] co64
+- [x] stsc
+- [x] stsz
+- [x] pitm
+- [x] iloc
+- [x] iinf
+- [x] infe
+- [x] iref
+- [x] thmb|dimg|cdsc|auxl
+- [x] ipma
+- [x] sidx
+- [x] tfhd
+- [x] trun
+- [x] trex
+- [x] tfdt
+- [x] mfhd
+- [x] hvc1|hev1
+- [x] hvcC
+- [x] ispe
+- [x] mfhd
+      
 <details>
   <summary>MP4 Box Dump JSON</summary>
   <pre><code>
@@ -353,3 +393,5 @@
 	}]
   </code></pre>
 </details>
+AVCC解析，包括SPS/PPS <br/>
+HVCC解析，包括VPS/SPS/PPS
