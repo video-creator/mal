@@ -1,7 +1,10 @@
 # MAL （Media Analysis Tool ）
 媒体分析工具
 ## 支持格式
-FMP4/MP4/HEIF/MOV box进行解析，包括
+### FMP4/MP4/HEIF/MOV
+AVCC解析，包括SPS/PPS <br/>
+HVCC解析，包括VPS/SPS/PPS <br/>
+包括以下box解析<br/>
 - [x] ftyp
 - [x] mvhd
 - [x] tkhd
@@ -393,9 +396,10 @@ FMP4/MP4/HEIF/MOV box进行解析，包括
 	}]
   </code></pre>
 </details>
-AVCC解析，包括SPS/PPS <br/>
-HVCC解析，包括VPS/SPS/PPS <br/>
-FLV进行解析,包括<br/>
+
+### FLV
+
 - [x] audio tag
 - [x] video tag (支持enhanced flv)
 - [x] script tag
+### WEBP
