@@ -394,4 +394,8 @@ FMP4/MP4/HEIF/MOV box进行解析，包括
   </code></pre>
 </details>
 AVCC解析，包括SPS/PPS <br/>
-HVCC解析，包括VPS/SPS/PPS
+HVCC解析，包括VPS/SPS/PPS <br/>
+FLV进行解析,包括<br/>
+- [x] audio tag
+- [x] video tag (支持enhanced flv)
+- [x] script tag
