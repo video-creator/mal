@@ -61,7 +61,7 @@ namespace mal
         fast_any::any writeField(MDPAtomField field, int big = 1, std::string _extraVal="") {
             return writeField(field.name, field.bits, field.display_type,big, _extraVal,field.callback);
         }
-        fast_any::any writeField(std::string _name, int64_t _bits, MDPFieldDisplayType type = MDPFieldDisplayType_int64,int big = 1, std::string _extraVal="" , std::function<fast_any::any(fast_any::any)> callback = NULL) {
+        fast_any::any writeField(std::string _name, int64_t _bits, MDPFieldDisplayType type = MDPFieldDisplayType_int64,int big = 1, std::string _extraVal="" , std::function<fast_any::any(fast_any::any)> callback = NULL, fast_any::any *direct_val = nullptr) {
             if (_bits > 0) {
                 _name = _name + "(" + std::to_string(_bits) + "bits" + ")";
             }
@@ -70,14 +70,33 @@ namespace mal
             }
             auto filed = std::make_shared<MDPAtomField>(_name,dataSource->currentBitsPosition(),_bits,_extraVal);
             if (type == MDPFieldDisplayType_int64) {
-                uint64_t val = dataSource->readBitsInt64(_bits,0, big);
+                int64_t val = dataSource->readBitsInt64(_bits,0, big);
+                if (_bits == 0 && direct_val != nullptr && direct_val->has_value()) {
+                    if (direct_val->as<uint64_t>()) {
+                        val = *(direct_val->as<uint64_t>());
+                    } else if (direct_val->as<int64_t>()) {
+                        val = *(direct_val->as<int64_t>());
+                    } else if (direct_val->as<int>()) {
+                        val = *(direct_val->as<int>());
+                    } else if (direct_val->as<int32_t>()) {
+                        val = *(direct_val->as<int32_t>());
+                    }  else if (direct_val->as<uint32_t>()) {
+                        val = *(direct_val->as<uint32_t>());
+                    }
+                }
                 filed->putValue<uint64_t>(val,MDPFieldDisplayType_int64);
             } else if (type == MDPFieldDisplayType_string) {
                 std::string val = dataSource->readBytesString(_bits/8);
+                if (_bits == 0 && direct_val != nullptr && direct_val->has_value()) {
+                    val = *(direct_val->as<std::string>());
+                }
                 filed->putValue<std::string>(val,MDPFieldDisplayType_string);
             } else if (type == MDPFieldDisplayType_fixed_16X16_float) {
                 unsigned char *data = dataSource->readBytesRaw(_bits/8);
                 double val = mdp_strconvet_to_fixed_16x16_point((char *)data);
+                if (_bits == 0 && direct_val != nullptr && direct_val->has_value()) {
+                    val = *(direct_val->as<double>());
+                }
                 filed->putValue<double>(val,MDPFieldDisplayType_double);
             } else if (type == MDPFieldDisplayType_hex) {
                int bytes = _bits/8;
@@ -85,16 +104,28 @@ namespace mal
                 for (size_t i = 0; i < bytes; i++) {
                     val += intToHexString(dataSource->readBytesInt64(1)) + " ";
                 }
+                if (_bits == 0 && direct_val != nullptr && direct_val->has_value()) {
+                    val = *(direct_val->as<std::string>());
+                }
                 filed->putValue<std::string>(val,MDPFieldDisplayType_string);
             } else if (type == MDPFieldDisplayType_double) {
-                int64_t value = dataSource->readBitsInt64(_bits,0,big);
-                union tmp {
-                    int64_t a;
-                    double b;
-                };
-                union tmp t;
-                t.a = value;
-                filed->putValue<double>(t.b,MDPFieldDisplayType_double);
+                double val = 0;
+                if (_bits > 0) {
+                    int64_t value = dataSource->readBitsInt64(_bits,0,big);
+                    union tmp {
+                        int64_t a;
+                        double b;
+                    };
+                    union tmp t;
+                    t.a = value;
+                    val = t.b;
+                } else {
+                    val = *(direct_val->as<double>());
+                }
+
+                filed->putValue<double>(val,MDPFieldDisplayType_double);
+            } else if (type == MDPFieldDisplayType_separator){
+                filed->putValue<std::string>("↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓",MDPFieldDisplayType_string);
             }  else {
                 dataSource->skipBits(_bits);
             }
@@ -113,6 +144,20 @@ namespace mal
         T writeField(std::string _name, int64_t _bits, MDPFieldDisplayType type = MDPFieldDisplayType_int64, int big = 1, std::string _extraVal="" , std::function<fast_any::any(fast_any::any)> callback = NULL) {
             fast_any::any val = writeField(_name,_bits,type,big,_extraVal,callback);
             return *(val.as<T>());
+        }
+        template <typename T = uint64_t>
+        void writeValueField(std::string _name, T val, std::string _extraVal="") {
+            fast_any::any obj;
+            MDPFieldDisplayType type = MDPFieldDisplayType_int64;
+            if(std::is_same<T,int>::value || std::is_same<T,uint64_t>::value) {
+                type = MDPFieldDisplayType_int64;
+            } else if(std::is_same<T,std::string>::value) {
+                type = MDPFieldDisplayType_string;
+            } else if(std::is_same<T,double>::value) {
+                type = MDPFieldDisplayType_double;
+            }
+            obj.emplace<T>(val);
+            writeField(_name, 0,type,1,_extraVal,nullptr, &obj);
         }
 
     };

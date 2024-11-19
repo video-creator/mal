@@ -36,11 +36,13 @@ namespace mal {
         int audio_tag_index_ = 0;
         int video_tag_index_ = 0;
         int script_tag_index_ = 0;
+        std::string current_key_ = ""; //script tag
         int processFlvHeader(std::shared_ptr<MDPAtom> atom);
         int processVideoTag_(std::shared_ptr<MDPAtom> atom);
         int processAudioTag_(std::shared_ptr<MDPAtom> atom);
         int processScriptTag_(std::shared_ptr<MDPAtom> atom);
         int processTag_(std::shared_ptr<MDPAtom> atom);
+        void processScriptObject_(std::shared_ptr<MDPAtom> atom);
     };
 }
 

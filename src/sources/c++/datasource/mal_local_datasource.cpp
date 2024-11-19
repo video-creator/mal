@@ -62,6 +62,7 @@ int64_t bigEndianToLittleEndian(int64_t bigEndianValue, int64_t bytes_size) {
 }
 
 uint64_t LocalDataSource::readBitsInt64(int64_t bits_size, bool rewind, int big, bool convert_rbsp) {
+    if (bits_size == 0) return 0;
     int64_t current = _bitsReader->position();
     int64_t ret = 0;
     if (!big) {
@@ -108,6 +109,7 @@ uint64_t LocalDataSource::readBytesInt64(int64_t bytes, bool rewind, int big, bo
     return readBitsInt64(bytes * 8, rewind,big, convert_rbsp);
 }
 std::string LocalDataSource::readBytesString(int64_t bytes, bool rewind) {
+    if (bytes == 0) return "";
     int64_t current = currentBitsPosition();
     std::string result = "";
     for (int i = 0; i < bytes; i++) {

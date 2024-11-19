@@ -1,5 +1,6 @@
 #include "mal_i_parser.h"
 #include "mal_local_datasource.h"
+#include "../deps/spdlog/formatter.h"
 extern "C" {
 #include <libavutil/avassert.h>
 #include "../../utils/cJSON.h"
@@ -40,21 +41,28 @@ static cJSON *dumpBox(std::vector<std::shared_ptr<MDPAtom>> atoms, int full) {
         cJSON_AddItemToArray(array, obj);
         if (full) {
             for (auto &filed : atom->fields) {
+                std::string val = "";
                 if (filed->display_type == MDPFieldDisplayType_int64 &&
                     filed->val.has_value()) {
-                    cJSON_AddNumberToObject(attr_obj, filed->name.c_str(),
-                                            *(filed->val.as<uint64_t>()));
+                    val = std::to_string(*(filed->val.as<uint64_t>()));// cJSON_AddNumberToObject(attr_obj, filed->name.c_str(),
+//                                            *(filed->val.as<uint64_t>()));
                 } else if (filed->display_type ==
                            MDPFieldDisplayType_string &&
                            filed->val.has_value()) {
-                    cJSON_AddStringToObject(attr_obj, filed->name.c_str(),
-                                            filed->val.as<std::string>()->c_str());
+                    val = *(filed->val.as<std::string>());
+//                    cJSON_AddStringToObject(attr_obj, filed->name.c_str(),
+//                                            filed->val.as<std::string>()->c_str());
                 } else if (filed->display_type ==
                            MDPFieldDisplayType_double &&
                            filed->val.has_value()) {
-                    cJSON_AddNumberToObject(attr_obj, filed->name.c_str(),
-                                            (*filed->val.as<double>()));
+                    val = std::to_string(*(filed->val.as<double>())) ;
+//                    cJSON_AddNumberToObject(attr_obj, filed->name.c_str(),
+//                                            (*filed->val.as<double>()));
                 }
+                if (filed->extraVal.length() > 0) {
+                    val += fmt::format("({})",filed->extraVal);
+                }
+                cJSON_AddStringToObject(attr_obj, filed->name.c_str(),val.c_str());
             }
         }
         
