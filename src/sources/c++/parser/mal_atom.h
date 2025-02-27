@@ -333,6 +333,7 @@ public:
     MALMediaType mediaType = MALMediaType::none;
     MALCodecType codecType = MALCodecType::none;
     int index = -1;
+    int64_t timescale = 1;
     std::vector<std::shared_ptr<MALVideoConfig>> videoConfig;
     std::shared_ptr<MALVideoConfig> currentConfig() {
         if (videoConfig.empty()) return nullptr;
@@ -366,6 +367,11 @@ public:
     MALShallowCheck shallowCheck;
     MALDeepCheck deepCheck;
     std::shared_ptr<IDataSource> datasource = nullptr;
+    void addShallowWarning(std::string msg) {
+        if (std::find(shallowCheck.warning.begin(), shallowCheck.warning.end(), msg) == shallowCheck.warning.end()) {
+            shallowCheck.warning.push_back(msg);
+        }
+    }
 private:
     int index_ = 0;
 };
@@ -420,6 +426,7 @@ public:
     }
     int64_t pos = 0;
     int64_t pts= 0;
+    double pts_time = 0.0;
     int64_t dts = 0;
     int64_t number = 0; //序号
     int sample_description_index = 0;

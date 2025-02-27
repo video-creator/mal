@@ -182,7 +182,10 @@ void MP4Parser::registerParserTableEntry_() {
                                    std::vector<MDPAtomField> fields = {
                                        MDPAtomField("creation_time", creation_time_size * 8),
                                        MDPAtomField("modification_time", modification_time_size * 8),
-                                       MDPAtomField("timescale", timescale_size * 8),
+                                       MDPAtomField("timescale", timescale_size * 8,MDPFieldDisplayType_int64,1, [=,&version](fast_any::any val) {
+                                           currentStream_->timescale =  *(val.as<uint64_t>());
+                                           return val;
+                                       }),
                                        MDPAtomField("duration", duration_size * 8),
                                        MDPAtomField("pad_language", 2 * 8),
                                        MDPAtomField("pre_defined", 2 * 8),

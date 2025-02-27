@@ -98,6 +98,7 @@ elst:
     }
     pkt->dts = dts;
     pkt->pts = pts;
+    pkt->pts_time = pts * 1.0 / stream_->timescale;
 }
 void MALMP4PacketLoader::checkPTS(std::shared_ptr<MALPacket> pkt) {
     if (pkt->flag == MALPacketFlag::idr) {
@@ -146,7 +147,20 @@ std::vector<std::shared_ptr<MALPacket>> MALMP4PacketLoader::loadPackets(int size
         calculateTS(packet);
         list.push_back(packet);
         currentIndex_++;
-        std::cout << "sample pos :" << pos << " size:" << entrySize << " at index: " << i << " POC : " << packet->poc << " dts:" << packet->dts << " pts:" << packet->pts << " pkt flag:" << mal_convert_pkt_flag_to_str(packet->flag) << " ref_idc: " << packet->nal_ref_idc << std::endl;
+        std::string nal_des = "";
+        int is_open_gop = 0;
+        for (int i = 0; i < packet->nals.size(); i++) {
+            nal_des += fmt::format(" nal_unit_type[{}]: {}",i,packet->nals[i]->nal_unit_type);
+            if (stream_->codecType == MALCodecType::h265) {
+                if (packet->nals[i]->nal_unit_type == 21) { //CRA
+                    is_open_gop = 1;
+                }
+            }
+        }
+        if (is_open_gop) {
+            fmtCtx_->addShallowWarning("该视频存在CRA，可能是open gop，分片时注意花屏");
+        }
+        std::cout << "sample pos :" << pos << " size:" << entrySize << " at index: " << i << " POC : " << packet->poc << " dts:" << packet->dts << " pts:" << packet->pts << " pts_time:" << packet->pts_time << " pkt flag:" << mal_convert_pkt_flag_to_str(packet->flag) << " nals_count: " << packet->nals.size() << nal_des << " ref_idc: " << packet->nal_ref_idc << std::endl;
         checkPTS(packet);
     }
     return list;
