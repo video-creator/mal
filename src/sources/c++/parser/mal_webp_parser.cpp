@@ -20,8 +20,8 @@ int WEBPParser::startParse() {
     return 0;
 }
 
-void WEBPParser::loadPackets(int size) {
-    
+std::vector<std::shared_ptr<MALPacket>> WEBPParser::loadPackets(int size) {
+    return {};
 }
 bool WEBPParser::supportFormat() {
     if (_datasource->totalSize() < 8) return false;

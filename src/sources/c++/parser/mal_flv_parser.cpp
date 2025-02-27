@@ -20,8 +20,8 @@ int FLVPParser::startParse() {
     return 0;
 }
 
-void FLVPParser::loadPackets(int size) {
-    
+std::vector<std::shared_ptr<MALPacket>> FLVPParser::loadPackets(int size) {
+    return {};
 }
 bool FLVPParser::supportFormat() {
     if (_datasource->totalSize() < 9) return false;

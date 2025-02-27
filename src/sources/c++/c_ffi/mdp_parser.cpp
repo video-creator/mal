@@ -26,8 +26,11 @@ void *mdp_dump_box(void *parser) {
     _parser->startParse();
     _parser->dumpFormats(1);
     _parser->dumpVideoConfig();
+    _parser->loadPackets(500);
+    _parser->dumpShallowCheck();
     return NULL;
 }
+
 #ifdef __cplusplus
 }
 #endif

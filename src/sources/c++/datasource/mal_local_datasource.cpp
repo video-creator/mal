@@ -4,6 +4,9 @@ extern "C" {
     #include  <libavutil/mem.h>
     #include "libavutil/file.h"
 }
+#include <locale>
+#include <codecvt>
+#include <iostream>
 using namespace mal;
 LocalDataSource::LocalDataSource(const std::string& path):_path(path) {
     
@@ -18,6 +21,7 @@ LocalDataSource::LocalDataSource(uint8_t * memoryData, int64_t size, bool copy){
         _memoryData = memoryData;
     }
     _memorySize = size;
+    open();
 }
 int LocalDataSource::open() {
     int ret = 0;
@@ -91,9 +95,7 @@ void LocalDataSource::seekBytes(int64_t position, int whence) {
     } else if (whence == SEEK_SET) {
         _bitsReader->seek(position * 8);
     } else if (whence == SEEK_END) {
-        if (position < 0) {
-            _bitsReader->seek((totalSize() + position)* 8);
-        }
+        _bitsReader->seek((totalSize() + position)* 8);
     }
 }
 void LocalDataSource::skipBytes(int64_t position) {
@@ -118,7 +120,10 @@ std::string LocalDataSource::readBytesString(int64_t bytes, bool rewind) {
             result += static_cast<char>(val); // 转换为字符并添加到结果中
         } else {
             // 对于非 ASCII 字符，可以选择以十六进制格式添加到结果中
-            result += "[" + std::to_string(static_cast<int>(val)) + "]"; // 也可以使用 std::hex 转换
+            //result += "[" + std::to_string(static_cast<int>(val)) + "]"; // 也可以使用 std::hex 转换
+//            std::wcout.imbue(std::locale("en_US.utf8"));
+            wchar_t unicodeChar = static_cast<wchar_t>(val);
+            result += unicodeChar;
         }
     }
     if (rewind) {

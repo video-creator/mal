@@ -2,10 +2,6 @@
 #include <limits.h>
 #include <stdio.h>
 #include <bitset>
-extern "C" {
-#include "../../utils/mdp_int.h"
-#include "../../utils/mdp_string.h"
-}
 static void reverseOneBytesBitset(std::bitset<8> &set) {
       int a1 = set[0];
       int a2 = set[1];

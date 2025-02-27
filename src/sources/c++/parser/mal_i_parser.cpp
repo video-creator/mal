@@ -1,6 +1,8 @@
 #include "mal_i_parser.h"
 #include "mal_local_datasource.h"
+#include "../loader/mal_ff_packet_loader.hpp"
 #include "../deps/spdlog/formatter.h"
+#include "../parser/mal_dump.hpp"
 extern "C" {
 #include <libavutil/avassert.h>
 #include "../../utils/cJSON.h"
@@ -11,22 +13,34 @@ extern "C" {
 #include <iostream>
 using namespace mal;
 IParser::IParser(const std::shared_ptr<IDataSource>& datasource):_datasource(datasource) {
-
+    malFormatContext_ = std::make_shared<MALFormatContext>();
+    malFormatContext_->datasource = datasource->shallowCopy();
 }
 IParser::IParser(const std::string& path, Type type) {
+    malFormatContext_ = std::make_shared<MALFormatContext>();
     if (type == Type::local) {
         _datasource = std::make_shared<LocalDataSource>(path);
     } else {
         av_assert0(true);
     }
     _datasource->open();
+    malFormatContext_->datasource = _datasource->shallowCopy();
 }
 int IParser::startParse() {
     return 0;
 }
-void IParser::loadPackets(int size) {
-    
+std::vector<std::shared_ptr<MALPacket>> IParser::loadPackets(int size) {
+    if (pktLoader_) {
+        auto packets = pktLoader_->loadPackets(size);
+//        for (auto el : packets) {
+//            std::string json = dumpPacket(el);
+//            std::cout << json << std::endl;
+//        }
+        return packets;
+    }
+    return {};
 }
+
 bool IParser::supportFormat() {
     return false;
 }
@@ -97,6 +111,25 @@ std::string IParser::dumpFormats(int full) {
       // 关闭文件
       outputFile.close();
     }
+    return "";
+}
+std::string IParser::dumpShallowCheck() {
+    cJSON *shallow = cJSON_CreateObject();
+    cJSON *warningArray = cJSON_CreateArray();
+    cJSON_AddItemToObject(shallow, "warning", warningArray);
+    for (auto el : malFormatContext_->shallowCheck.warning) {
+        cJSON_AddStringToObject(warningArray, "", el.c_str());
+    }
+    cJSON *errorArray = cJSON_CreateArray();
+    cJSON_AddItemToObject(shallow, "error", errorArray);
+    for (auto el : malFormatContext_->shallowCheck.errors) {
+        cJSON_AddStringToObject(errorArray, "", el.c_str());
+    }
+    char *string = cJSON_Print(shallow);
+    std::cout << string << std::endl;
+    return string;
+}
+std::string IParser::dumpDeepCheck() {
     return "";
 }
 std::string IParser::dumpVideoConfig() {

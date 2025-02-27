@@ -1,7 +1,7 @@
 #include "mal_mov_parser.h"
 #include "../deps/spdlog/fmt/fmt.h"
 #include "../../utils/mal_string.hpp"
-#include "mal_h2645.h"
+#include "mal_codec_parser.h"
 #include <fstream>
 #include <unordered_set>
 #include <vector>
@@ -12,9 +12,9 @@ extern "C" {
 }
 using namespace mal;
 MP4Parser::MP4Parser(const std::shared_ptr<IDataSource> &datasource)
-    : IParser(datasource) {
-        registerParserTableEntry_();
-    }
+: IParser(datasource) {
+    registerParserTableEntry_();
+}
 MP4Parser::MP4Parser(const std::string &path, Type type) : IParser(path, type) {
     registerParserTableEntry_();
 }
@@ -121,14 +121,50 @@ void MP4Parser::registerParserTableEntry_() {
      **/
     _parseTableEntry.push_back(std::make_tuple(
                                                "moov|trak|tref|hint|font|vdep|vplx|subt|trgr|msrc|mdia|minf|udta|edts|iprp|ipco|moof|traf|mvex|hoov",
-                                               [=](std::shared_ptr<MDPAtom> atom) { this->_parseChildAtom(atom); }));
+                                               [=](std::shared_ptr<MDPAtom> atom) {
+                                                   if (atom->name == "trak") {
+                                                       currentStream_ = std::make_shared<MALMP4Stream>();
+                                                       malFormatContext_->addStream(currentStream_);
+                                                   }
+                                                   this->_parseChildAtom(atom);
+                                                   
+                                               }));
     // full box
     _parseTableEntry.push_back(
                                std::make_tuple("meta", [=](std::shared_ptr<MDPAtom> atom) {
-                                   atom->writeField("version", 1 * 8);
-                                   atom->writeField("flags", 3 * 8);
-                                   this->_parseChildAtom(atom);
+                                   //meta 根据标准里边说的，应该是full box，但是有的是，有的不是，和ffmpeg一样，往后检测，找到hdlr
+                                   while (!atom->dataSource->isEof() && atom->dataSource->readBytesString(4) != "hdlr") {}
+                                   if (!atom->dataSource->isEof()) {
+                                       atom->dataSource->seekBytes(-8);
+                                       this->_parseChildAtom(atom);
+                                   }
+                                   
                                }));
+    _parseTableEntry.push_back(
+                               std::make_tuple("ilst", [=](std::shared_ptr<MDPAtom> atom) {
+                                   auto datasource = atom->dataSource;
+                                   while (!datasource->isEof()) {
+                                       int64_t current = datasource->currentBytesPosition();
+                                       //下边也是一个一个的box
+                                       int64_t atom_size = rbits_i(4 * 8);
+                                       auto atom_type = rbytes_s(4);
+                                       std::string key = "";
+                                       if (atom_type == "\xa9""nam") {
+                                           key = "title";
+                                       } else if (atom_type == "\xa9""ART") {
+                                           key = "artist";
+                                       }
+                                       datasource->seekBytes(current + atom_size,SEEK_SET);
+                                   }
+                                   
+                                   
+                               }));
+    
+    _parseTableEntry.push_back(std::make_tuple(
+                                               "\xa9nam|\xa9too",
+                                               [=](std::shared_ptr<MDPAtom> atom) {
+                                                   
+                                               }));
     _parseTableEntry.push_back(
                                std::make_tuple("mdhd", [=](std::shared_ptr<MDPAtom> atom) {
                                    uint64_t version = atom->writeField<uint64_t>("version", 1 * 8);
@@ -157,21 +193,28 @@ void MP4Parser::registerParserTableEntry_() {
                                }));
     _parseTableEntry.push_back(
                                std::make_tuple("hdlr", [=](std::shared_ptr<MDPAtom> atom) {
+                                   std::string handler_type = "";
                                    std::vector<MDPAtomField> fields = {
                                        MDPAtomField("version", 1 * 8),
                                        MDPAtomField("flags", 3 * 8),
                                        MDPAtomField("pre_defined", 4 * 8),
                                        MDPAtomField("handler_type", 4 * 8,
-                                                    MDPFieldDisplayType_string),
+                                                    MDPFieldDisplayType_string,1,[&handler_type](fast_any::any val){
+                                           handler_type = *(val.as<std::string>());
+                                           return val;
+                                       }),
                                        MDPAtomField("reserved", 12 * 8,
                                                     MDPFieldDisplayType_hex),
                                    };
                                    for (auto &el : fields) {
                                        atom->writeField(el);
                                    }
-                                   atom->writeField(
-                                                    "name", (atom->size - atom->dataSource->currentBytesPosition()) * 8,
-                                                    MDPFieldDisplayType_string);
+                                   std::string name = atom->writeField<std::string>("name", (atom->size - atom->dataSource->currentBytesPosition()) * 8,MDPFieldDisplayType_string);
+                                   if (handler_type== "vide")  {
+                                       currentStream_->mediaType = MALMediaType::video;
+                                   } else if (handler_type == "soun") {
+                                       currentStream_->mediaType = MALMediaType::audio;
+                                   }
                                }));
     _parseTableEntry.push_back(
                                std::make_tuple("elng", [=](std::shared_ptr<MDPAtom> atom) {
@@ -241,18 +284,30 @@ void MP4Parser::registerParserTableEntry_() {
                                        atom->writeField("samples_per_frame", 4 * 8);
                                    }
                                    this->_parseChildAtom(atom);
-                                  
+                                   
                                }));
     _parseTableEntry.push_back(
                                std::make_tuple("avc1|avc2", [=](std::shared_ptr<MDPAtom> atom) {
+                                   if (currentStream_->videoConfig.size() > 0) {
+                                       malFormatContext_->shallowCheck.warning.push_back("stsd下存在多个avc1/avc2 box，视频播放可能存在兼容问题");
+                                   }
+                                   auto avcc = std::make_shared<MALAVCC>();
+                                   currentStream_->videoConfig.push_back(avcc);
+                                   currentStream_->codecType = MALCodecType::h264;
                                    std::vector<MDPAtomField> fields = {
                                        MDPAtomField("reserved", 6 * 8),
                                        MDPAtomField("data_reference_index", 2 * 8),
                                        MDPAtomField("pre_defined", 2 * 8),
                                        MDPAtomField("reserved", 2 * 8),
                                        MDPAtomField("pre_defined", 12 * 8),
-                                       MDPAtomField("width", 2 * 8),
-                                       MDPAtomField("height", 2 * 8),
+                                       MDPAtomField("width", 2 * 8,MDPFieldDisplayType_int64,1,[=](fast_any::any any) {
+                                           avcc->width = (int)(*(any.as<uint64_t>()));
+                                           return any;
+                                       }),
+                                       MDPAtomField("height", 2 * 8,MDPFieldDisplayType_int64,1,[=](fast_any::any any) {
+                                           avcc->height = (int)(*(any.as<uint64_t>()));
+                                           return any;
+                                       }),
                                        MDPAtomField("horizresolution", 4 * 8),
                                        MDPAtomField("vertresolution", 4 * 8),
                                        MDPAtomField("reserved", 4 * 8),
@@ -272,8 +327,15 @@ void MP4Parser::registerParserTableEntry_() {
                                std::make_tuple("avcC", [=](std::shared_ptr<MDPAtom> atom) {
                                    int64_t lastBytes = atom->dataSource->totalSize() - atom->dataSource->currentBytesPosition();
                                    auto avcc_datasource = atom->dataSource->readBytesStream(lastBytes,true);
+                                   if (video_config_future_.valid()) {
+                                       mdp_video_header *header = video_config_future_.get();
+                                       if (header) {
+                                           video_configs_.push_back(header);
+                                       }
+                                   }
                                    video_config_future_ = std::async(std::launch::async, [=](){
-                                       video_config_ = mdp_parse_avcc(avcc_datasource);
+                                       MALCodecParser codecParser(avcc_datasource, malFormatContext_, currentStream_, currentStream_->currentConfig());
+                                       mdp_video_header * video_config_ = codecParser.parse_avcc();
                                        return video_config_;
                                    });
                                    uint64_t numOfSequenceParameterSets = 0;
@@ -284,7 +346,10 @@ void MP4Parser::registerParserTableEntry_() {
                                        MDPAtomField("AVCLevelIndication", 1 * 8),
                                        
                                        MDPAtomField("reserved", 6),
-                                       MDPAtomField("lengthSizeMinusOne", 2),
+                                       MDPAtomField("lengthSizeMinusOne", 2,MDPFieldDisplayType_int64,1,[=](fast_any::any any) {
+                                           currentStream_->currentConfig()->lengthSizeMinusOne = (int)(*(any.as<uint64_t>()));
+                                           return any;
+                                       }),
                                        
                                        MDPAtomField("reserved", 3),
                                        MDPAtomField("numOfSequenceParameterSets", 5,
@@ -301,7 +366,7 @@ void MP4Parser::registerParserTableEntry_() {
                                    for (int i = 0; i < numOfSequenceParameterSets; i++) {
                                        uint64_t sequenceParameterSetLength =
                                        atom->writeField<uint64_t>("sequenceParameterSetLength", 2 * 8);
-//                                       atom->dataSource->skipBytes(sequenceParameterSetLength);
+                                       //                                       atom->dataSource->skipBytes(sequenceParameterSetLength);
                                        atom->writeField("sps_nal_data",sequenceParameterSetLength * 8,MDPFieldDisplayType_hex);
                                    }
                                    uint64_t numOfPictureParameterSets =
@@ -309,7 +374,7 @@ void MP4Parser::registerParserTableEntry_() {
                                    for (int i = 0; i < numOfPictureParameterSets; i++) {
                                        uint64_t pictureParameterSetLength =
                                        atom->writeField<uint64_t>("pictureParameterSetLength", 2 * 8);
-//                                       atom->dataSource->skipBytes(pictureParameterSetLength);
+                                       //                                       atom->dataSource->skipBytes(pictureParameterSetLength);
                                        atom->writeField("pps_nal_data",pictureParameterSetLength * 8,MDPFieldDisplayType_hex);
                                    }
                                }));
@@ -325,10 +390,11 @@ void MP4Parser::registerParserTableEntry_() {
                                        media_time_size = 8;
                                    }
                                    for (int i = 1; i <= entry_count; i++) {
-                                       atom->writeField("segment_duration", segment_duration_size * 8);
-                                       atom->writeField("media_time", media_time_size * 8);
-                                       atom->writeField("media_rate_integer", 2 * 8);
-                                       atom->writeField("media_rate_fraction", 2 * 8);
+                                       uint64_t duration = atom->writeField<uint64_t>("segment_duration", segment_duration_size * 8);
+                                       uint64_t media_time = atom->writeField<uint64_t>("media_time", media_time_size * 8);
+                                       uint64_t rate_integer = atom->writeField<uint64_t>("media_rate_integer", 2 * 8);
+                                       uint64_t rate_fraction = atom->writeField<uint64_t>("media_rate_fraction", 2 * 8);
+                                       currentStream_->elst.push_back({duration,media_time,rate_integer,rate_fraction});
                                    }
                                }));
     _parseTableEntry.push_back(
@@ -337,8 +403,9 @@ void MP4Parser::registerParserTableEntry_() {
                                    atom->writeField("flags", 3 * 8);
                                    uint64_t entry_count = atom->writeField<uint64_t>("entry_count", 4 * 8);
                                    for (int i = 0; i < entry_count; i++) {
-                                       atom->writeField(fmt::format("sample_count[{}]", i), 4 * 8);
-                                       atom->writeField(fmt::format("sample_delta[{}]", i), 4 * 8);
+                                       uint64_t count = atom->writeField<uint64_t>(fmt::format("sample_count[{}]", i), 4 * 8);
+                                       uint64_t offset = atom->writeField<uint64_t>(fmt::format("sample_delta[{}]", i), 4 * 8);
+                                       currentStream_->stts.push_back({count,offset});
                                    }
                                }));
     _parseTableEntry.push_back(
@@ -347,7 +414,8 @@ void MP4Parser::registerParserTableEntry_() {
                                    atom->writeField("flags", 3 * 8);
                                    uint64_t entry_count = atom->writeField<uint64_t>("entry_count", 4 * 8);
                                    for (int i = 0; i < entry_count; i++) {
-                                       atom->writeField(fmt::format("sample_number[{}]", i), 4 * 8);
+                                       auto sample_number = atom->writeField<uint64_t>(fmt::format("sample_number[{}]", i), 4 * 8);
+                                       currentStream_->stss.push_back(sample_number);
                                    }
                                }));
     _parseTableEntry.push_back(
@@ -356,8 +424,9 @@ void MP4Parser::registerParserTableEntry_() {
                                    atom->writeField("flags", 3 * 8);
                                    uint64_t entry_count = atom->writeField<uint64_t>("entry_count", 4 * 8);
                                    for (int i = 0; i < entry_count; i++) {
-                                       atom->writeField(fmt::format("sample_count[{}]", i), 4 * 8);
-                                       atom->writeField(fmt::format("sample_offset[{}]", i), 4 * 8);
+                                       uint64_t count = atom->writeField<uint64_t>(fmt::format("sample_count[{}]", i), 4 * 8);
+                                       uint64_t offset = atom->writeField<uint64_t>(fmt::format("sample_offset[{}]", i), 4 * 8);
+                                       currentStream_->ctts.push_back({count,offset});
                                    }
                                }));
     _parseTableEntry.push_back(
@@ -376,7 +445,8 @@ void MP4Parser::registerParserTableEntry_() {
                                    atom->writeField("flags", 3 * 8);
                                    uint64_t entry_count = atom->writeField<uint64_t>("entry_count", 4 * 8);
                                    for (int i = 0; i < entry_count; i++) {
-                                       atom->writeField(fmt::format("chunk_offset[{}]", i), 4 * 8);
+                                       uint64_t chunk_offset = atom->writeField<uint64_t>(fmt::format("chunk_offset[{}]", i), 4 * 8);
+                                       currentStream_->stco.push_back(chunk_offset);
                                    }
                                }));
     _parseTableEntry.push_back(
@@ -385,7 +455,8 @@ void MP4Parser::registerParserTableEntry_() {
                                    atom->writeField("flags", 3 * 8);
                                    uint64_t entry_count = atom->writeField<uint64_t>("entry_count", 4 * 8);
                                    for (int i = 0; i < entry_count; i++) {
-                                       atom->writeField(fmt::format("chunk_offset[{}]", i), 8 * 8);
+                                       uint64_t chunk_offset = atom->writeField<uint64_t>(fmt::format("chunk_offset[{}]", i), 8 * 8);
+                                       currentStream_->stco.push_back(chunk_offset);
                                    }
                                }));
     _parseTableEntry.push_back(
@@ -394,10 +465,11 @@ void MP4Parser::registerParserTableEntry_() {
                                    atom->writeField("flags", 3 * 8);
                                    uint64_t entry_count = atom->writeField<uint64_t>("entry_count", 4 * 8);
                                    for (int i = 0; i < entry_count; i++) {
-                                       atom->writeField(fmt::format("first_chunk[{}]", i), 4 * 8);
-                                       atom->writeField(fmt::format("samples_per_chunk[{}]", i), 4 * 8);
-                                       atom->writeField(fmt::format("sample_description_index[{}]", i),
+                                       auto first_chunk = atom->writeField<uint64_t>(fmt::format("first_chunk[{}]", i), 4 * 8);
+                                       auto samples_per_chunk =atom->writeField<uint64_t>(fmt::format("samples_per_chunk[{}]", i), 4 * 8);
+                                       auto sample_description_index = atom->writeField<uint64_t>(fmt::format("sample_description_index[{}]", i),
                                                         4 * 8);
+                                       currentStream_->stsc.push_back({first_chunk,samples_per_chunk,sample_description_index});
                                    }
                                }));
     _parseTableEntry.push_back(
@@ -408,7 +480,8 @@ void MP4Parser::registerParserTableEntry_() {
                                    uint64_t sample_count = atom->writeField<uint64_t>("sample_count", 4 * 8);
                                    if (sample_size == 0) {
                                        for (int i = 0; i < sample_count; i++) {
-                                           atom->writeField(fmt::format("entry_size[{}]", i), 4 * 8);
+                                           auto entry_size = atom->writeField<uint64_t>(fmt::format("entry_size[{}]", i), 4 * 8);
+                                           currentStream_->stsz.push_back(entry_size);
                                        }
                                    }
                                }));
@@ -667,14 +740,26 @@ void MP4Parser::registerParserTableEntry_() {
                                }));
     _parseTableEntry.push_back(
                                std::make_tuple("hvc1|hev1", [=](std::shared_ptr<MDPAtom> atom) {
+                                   if (currentStream_->videoConfig.size() > 0) {
+                                       malFormatContext_->shallowCheck.warning.push_back("stsd下存在多个hvc1/hev1 box，视频播放可能存在兼容问题");
+                                   }
+                                   auto hvcc = std::make_shared<MALHVCC>();
+                                   currentStream_->videoConfig.push_back(hvcc);
+                                   currentStream_->codecType = MALCodecType::h265;
                                    std::vector<MDPAtomField> fields = {
                                        MDPAtomField("reserved", 6 * 8),
                                        MDPAtomField("data_reference_index", 2 * 8),
                                        MDPAtomField("pre_defined", 2 * 8),
                                        MDPAtomField("reserved", 2 * 8),
                                        MDPAtomField("pre_defined", 12 * 8),
-                                       MDPAtomField("width", 2 * 8),
-                                       MDPAtomField("height", 2 * 8),
+                                       MDPAtomField("width", 2 * 8,MDPFieldDisplayType_int64,1,[=](fast_any::any any) {
+                                           hvcc->width = (int)(*(any.as<uint64_t>()));
+                                           return any;
+                                       }),
+                                       MDPAtomField("height", 2 * 8,MDPFieldDisplayType_int64,1,[=](fast_any::any any) {
+                                           hvcc->height = (int)(*(any.as<uint64_t>()));
+                                           return any;
+                                       }),
                                        MDPAtomField("horizresolution", 4 * 8, MDPFieldDisplayType_hex), //0x00480000; // 72 dpi
                                        MDPAtomField("vertresolution", 4 * 8, MDPFieldDisplayType_hex),
                                        MDPAtomField("reserved", 4 * 8),
@@ -689,11 +774,26 @@ void MP4Parser::registerParserTableEntry_() {
                                    this->_parseChildAtom(atom);
                                }));
     _parseTableEntry.push_back(
+                               std::make_tuple("pasp", [=](std::shared_ptr<MDPAtom> atom) {
+                                   uint64_t hSpacing = atom->writeField<uint64_t>("hSpacing", 4 * 8);
+                                   uint64_t vSpacing = atom->writeField<uint64_t>("vSpacing", 4 * 8);
+                                   if (hSpacing * 1.0 / vSpacing != 1.0) {
+                                       malFormatContext_->shallowCheck.warning.push_back("视频存在pasp，sar值不是1，注意渲染");
+                                   }
+                               }));
+    _parseTableEntry.push_back(
                                std::make_tuple("hvcC", [=](std::shared_ptr<MDPAtom> atom) { //对于heif描述了item_id 和 ipco的关系
                                    int64_t lastBytes = atom->dataSource->totalSize() - atom->dataSource->currentBytesPosition();
                                    auto hvcc_datasource = atom->dataSource->readBytesStream(lastBytes,true);
+                                   if (video_config_future_.valid()) {
+                                       mdp_video_header *header = video_config_future_.get();
+                                       if (header) {
+                                           video_configs_.push_back(header);
+                                       }
+                                   }
                                    video_config_future_ = std::async(std::launch::async, [=](){
-                                       video_config_ = mdp_parse_hvcc(hvcc_datasource);
+                                       MALCodecParser codecParser(hvcc_datasource,malFormatContext_, currentStream_, currentStream_->currentConfig());
+                                       mdp_video_header *video_config_ =codecParser.parse_hvcc();
                                        return video_config_;
                                    });
                                    std::vector<MDPAtomField> fields = {
@@ -718,7 +818,10 @@ void MP4Parser::registerParserTableEntry_() {
                                        MDPAtomField("constantFrameRate", 2),
                                        MDPAtomField("numTemporalLayers", 3),
                                        MDPAtomField("temporalIdNested", 1),
-                                       MDPAtomField("lengthSizeMinusOne", 2),
+                                       MDPAtomField("lengthSizeMinusOne", 2,MDPFieldDisplayType_int64,1,[=](fast_any::any any) {
+                                           currentStream_->currentConfig()->lengthSizeMinusOne = (int)(*(any.as<uint64_t>()));
+                                           return any;
+                                       }),
                                    };
                                    for (auto &el : fields) {
                                        atom->writeField(el);
@@ -753,43 +856,50 @@ void MP4Parser::registerParserTableEntry_() {
                                }));
 }
 bool MP4Parser::supportFormat() {
-  if (_datasource->totalSize() < 8)
+    if (_datasource->totalSize() < 8)
+        return false;
+    int64_t pos = _datasource->currentBytesPosition();
+    _datasource->seekBytes(4, SEEK_CUR);
+    int type = _datasource->readBytesInt64(4);
+    _datasource->seekBytes(pos, SEEK_SET);
+    if (type == mdp_strconvet_to_int("ftype", 4, 1)) {
+        return true;
+    }
+    
     return false;
-  int64_t pos = _datasource->currentBytesPosition();
-  _datasource->seekBytes(4, SEEK_CUR);
-  int type = _datasource->readBytesInt64(4);
-  _datasource->seekBytes(pos, SEEK_SET);
-  if (type == mdp_strconvet_to_int("ftype", 4, 1)) {
-    return true;
-  }
-
-  return false;
 }
 
 std::string MP4Parser::dumpVideoConfig() {
     if (video_config_future_.valid()) {
-        video_config_future_.get();
-    }
-    if (video_config_ && video_config_->root_item) {
-        cJSON *json =  dumpPS_(video_config_->root_item);
-        char *string = cJSON_Print(json);
-        std::cout << string << std::endl;
-        std::string filename = "/Users/Shared/output_ps.json";
-        // 创建一个输出文件流
-        std::ofstream outputFile(filename);
-
-        // 检查文件是否成功打开
-        if (!outputFile) {
-          std::cerr << "无法打开文件: " << filename << std::endl;
-          return ""; // 返回错误代码
+        mdp_video_header *header = video_config_future_.get();
+        if (header) {
+            video_configs_.push_back(header);
         }
-        // 将 JSON 字符串写入文件
-        outputFile << string;
-
-        // 关闭文件
-        outputFile.close();
     }
-    send_async_msg(MDPMessageType_Avc_header,video_config_);
+    cJSON *array = cJSON_CreateArray();
+    for (auto video_config_ : video_configs_) {
+        if (video_config_ && video_config_->root_item) {
+            cJSON *json =  dumpPS_(video_config_->root_item);
+            cJSON_AddItemToArray(array, json);
+        }
+    }
+    char *string = cJSON_Print(array);
+    std::cout << string << std::endl;
+    std::string filename = "/Users/Shared/output_ps.json";
+    // 创建一个输出文件流
+    std::ofstream outputFile(filename);
+    
+    // 检查文件是否成功打开
+    if (!outputFile) {
+        std::cerr << "无法打开文件: " << filename << std::endl;
+        return ""; // 返回错误代码
+    }
+    // 将 JSON 字符串写入文件
+    outputFile << string;
+    
+    // 关闭文件
+    outputFile.close();
+    //    send_async_msg(MDPMessageType_Avc_header,video_config_);
     return "";
 }
 cJSON * MP4Parser::dumpPS_(mdp_header_item *item) {
@@ -816,51 +926,60 @@ std::string MP4Parser::dumpFormats(int full) {
 
 
 int MP4Parser::_parseAtom() {
-  int64_t ret = 0;
-  root_atom_ = std::make_shared<MDPAtom>();
-  root_atom_->name = "root";
-  root_atom_->dataSource = _datasource;
-  root_atom_->size = _datasource->totalSize();
-  root_atom_->pos = 0;
-  _parseChildAtom(root_atom_);
-  return ret;
+    int ret = 0;
+    root_atom_ = std::make_shared<MDPAtom>();
+    root_atom_->name = "root";
+    root_atom_->dataSource = _datasource;
+    root_atom_->size = _datasource->totalSize();
+    root_atom_->pos = 0;
+    _parseChildAtom(root_atom_);
+    return ret;
 }
 
 
 int MP4Parser::_parseChildAtom(std::shared_ptr<MDPAtom> parent, bool once) {
-  auto datasource = parent->dataSource;
-  while (!datasource->isEof()) {
-    std::shared_ptr<MDPAtom> atom = std::make_shared<MDPAtom>();
-    atom->pos = datasource->currentBytesPosition();
-    atom->size = rbytes_i(4);
-    if (atom->size == 0) {
-      return 0;
+    auto datasource = parent->dataSource;
+    while (!datasource->isEof()) {
+        std::shared_ptr<MDPAtom> atom = std::make_shared<MDPAtom>();
+        atom->pos = datasource->currentBytesPosition();
+        atom->size = rbytes_i(4);
+        if (atom->size == 0) {
+            return 0;
+        }
+        atom->name = rbytes_s(4);
+        atom->headerSize = 8;
+        if (atom->size == 1) {
+            atom->size = rbytes_i(8);
+            atom->headerSize += 8;
+        }
+        int64_t cur = datasource->currentBytesPosition();
+        datasource->seekBytes(atom->pos, SEEK_SET);
+        atom->dataSource = datasource->readBytesStream(atom->size);
+        parent->childBoxs.push_back(atom);
+        for (auto &parse : _parseTableEntry) {
+            if (contains(splitToSet(std::get<0>(parse), "|"), atom->name)) {
+                atom->dataSource->skipBytes(atom->headerSize); // 跳过头部
+                std::get<1>(parse)(atom);
+                break;
+            }
+        }
+        if (once) break;
     }
-    atom->name = rbytes_s(4);
-    atom->headerSize = 8;
-    if (atom->size == 1) {
-      atom->size = rbytes_i(8);
-      atom->headerSize += 8;
-    }
-    int64_t cur = datasource->currentBytesPosition();
-    datasource->seekBytes(atom->pos, SEEK_SET);
-    atom->dataSource = datasource->readBytesStream(atom->size);
-    parent->childBoxs.push_back(atom);
-    for (auto &parse : _parseTableEntry) {
-      if (contains(splitToSet(std::get<0>(parse), "|"), atom->name)) {
-        atom->dataSource->skipBytes(atom->headerSize); // 跳过头部
-        std::get<1>(parse)(atom);
-        break;
-      }
-    }
-    if (once) break;
-  }
-  return 0;
+    return 0;
 }
 
 int MP4Parser::startParse() {
-  int ret = 0;
-  ret = _parseAtom();
-  return 0;
+    int ret = 0;
+    ret = _parseAtom();
+    int index = 0;
+    for (auto& stream : malFormatContext_->streams) {
+        if (stream->mediaType == MALMediaType::video) {
+            break;
+        }
+        index++;
+    }
+    pktLoader_ = std::make_shared<MALMP4PacketLoader>(malFormatContext_,index);
+    return 0;
 }
-void MP4Parser::loadPackets(int size) {}
+
+

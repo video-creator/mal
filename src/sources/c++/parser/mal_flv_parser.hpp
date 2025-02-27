@@ -15,7 +15,6 @@
 #include <functional>
 #include <future>
 extern "C" {
-    #include "../../utils/mdp_string.h"
     #include "../../utils/mdp_error.h"
     #include "../../utils/thpool.h"
     #include "libavutil/mem.h"
@@ -27,7 +26,7 @@ namespace mal {
         explicit FLVPParser(const std::shared_ptr<IDataSource>& datasource) ;
         FLVPParser(const std::string& path, Type type);
         int startParse();
-        void loadPackets(int size);
+        std::vector<std::shared_ptr<MALPacket>> loadPackets(int size);
         bool supportFormat();
         private:
         int _parseAtom();
